@@ -4,7 +4,7 @@
 use super::*;
 use serde_json::json;
 
-fn app() -> PhotocraftApp {
+fn app() -> Box<PhotocraftApp> {
     let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
     app.run("file.new", json!({"width": 40, "height": 30, "background": "transparent"})).unwrap();
     app.run("tools.setColors", json!({"foreground": "#ff0000", "background": "#0000ff"})).unwrap();
@@ -12,41 +12,28 @@ fn app() -> PhotocraftApp {
 }
 
 #[test]
-fn the_defaults_open_on_content_aware_with_the_measured_options() {
+fn the_contents_row_shows_content_aware_when_nothing_is_remembered() {
     let app = app();
-    let f = default_fields(&app);
-    assert_eq!(f["contents"], json!("contentAware"));
-    assert_eq!(f["colorAdaptation"], json!(true));
-    assert_eq!(f["mode"], json!("normal"));
-    assert_eq!(f["opacity"].as_f64(), Some(100.0));
-    assert_eq!(f["preserveTransparency"], json!(false));
+    let rows = rows(&app, [1.0, 0.0, 0.0], None, None);
+    let contents = rows.iter().find(|r| r.key == "contents").expect("the Contents row");
+    match &contents.kind {
+        ParamKind::Choice { default, .. } => assert_eq!(default.as_deref(), Some("contentAware")),
+        other => panic!("Contents is a choice, not {other:?}"),
+    }
 }
 
 #[test]
-fn reset_returns_to_content_aware_and_keeps_the_dialog_open() {
-    let mut app = app();
-    let id = open(&mut app);
-    let d = app.ui.dialog_mut(id).unwrap();
-    d.fields.insert("contents".into(), json!("white"));
-    d.fields.insert("colorAdaptation".into(), json!(false));
-    d.fields.insert("mode".into(), json!("multiply"));
-    d.fields.insert("opacity".into(), json!(40.0));
-    d.fields.insert("preserveTransparency".into(), json!(true));
-    let mut fields = d.fields.clone();
-    reset(&app, &mut fields);
-    app.ui.dialog_mut(id).unwrap().fields = fields;
-    let f = &app.ui.dialog_mut(id).unwrap().fields;
-    assert_eq!(f["contents"], json!("contentAware"), "Alt+Reset sets the fill-from-surroundings entry");
-    assert_eq!((f["colorAdaptation"].clone(), f["mode"].clone()), (json!(true), json!("normal")));
-    assert_eq!(f["opacity"].as_f64(), Some(100.0));
-    assert_eq!(f["preserveTransparency"], json!(false));
-    assert!(app.ui.dialogs.iter().any(|d| d.id == id), "Reset keeps the dialog open");
+fn reset_returns_to_content_aware_with_the_measured_options() {
+    let f = defaults([1.0, 0.0, 0.0], None, None, None);
+    assert_eq!(f.text("contents"), Some("contentAware"), "Alt+Reset sets the fill-from-surroundings entry");
+    assert_eq!(f.bool("colorAdaptation"), Some(true));
+    assert_eq!(f.text("mode"), Some("normal"));
+    assert_eq!(f.number("opacity"), Some(100.0));
+    assert_eq!(f.bool("preserveTransparency"), Some(false));
 }
 
 #[test]
-fn remembered_choices_still_win_over_the_default() {
-    let mut app = app();
-    app.session.prefs.edit(|p| p.dialogs.insert(COMMAND.into(), json!({"contents": "white"})));
-    let f = fields(&app);
-    assert_eq!(f["contents"], json!("white"));
+fn a_forced_preserve_transparency_keeps_its_state_on_reset() {
+    let f = defaults([1.0, 0.0, 0.0], None, None, Some(true));
+    assert_eq!(f.bool("preserveTransparency"), Some(true));
 }
